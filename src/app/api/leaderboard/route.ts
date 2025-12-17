@@ -7,6 +7,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import { calculateLeaderboard, type NodeScore } from "@/lib/scoring/node-score";
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 // Cache for leaderboard data
 let leaderboardCache: {
   scores: NodeScore[];

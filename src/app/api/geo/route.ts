@@ -4,6 +4,10 @@
  */
 
 import { NextResponse } from "next/server";
+
+// Force dynamic rendering - this route makes external API calls
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import {
   getGeoLocation,
