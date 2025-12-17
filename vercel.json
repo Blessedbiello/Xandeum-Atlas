@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/ingest",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/aggregate",
-      "schedule": "0 * * * *"
-    }
-  ]
-}
+{}
