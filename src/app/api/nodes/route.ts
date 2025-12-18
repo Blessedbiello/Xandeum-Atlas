@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc";
 import type { NodesApiResponse, NodeWithStats } from "@/types";
+import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -9,6 +10,7 @@ export const revalidate = 0;
  * GET /api/nodes
  *
  * Fetches all pNodes from the gossip network with their stats.
+ * Uses Redis caching for improved performance.
  *
  * Query Parameters:
  * - status: Filter by status (online, degraded, offline)
@@ -32,12 +34,22 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10)));
     const search = searchParams.get("search")?.toLowerCase();
 
-    // Collect network snapshot
-    const snapshot = await collectNetworkSnapshot({
-      timeout: 10000,
-      concurrency: 15,
-      fetchStats: true,
-    });
+    // Try to get snapshot from cache first
+    let snapshot = await getCache<any>(CACHE_KEYS.NETWORK_SNAPSHOT);
+    let cacheHit = true;
+
+    if (!snapshot) {
+      // Cache miss - collect fresh data
+      cacheHit = false;
+      snapshot = await collectNetworkSnapshot({
+        timeout: 10000,
+        concurrency: 15,
+        fetchStats: true,
+      });
+
+      // Cache the snapshot for future requests
+      await setCache(CACHE_KEYS.NETWORK_SNAPSHOT, snapshot, CACHE_TTL.SNAPSHOT);
+    }
 
     let nodes = snapshot.nodes;
 
@@ -81,6 +93,7 @@ export async function GET(request: NextRequest) {
         "X-Response-Time": `${Date.now() - startTime}ms`,
         "X-Total-Nodes": String(snapshot.total_discovered),
         "X-Collection-Errors": String(snapshot.errors.length),
+        "X-Cache": cacheHit ? "HIT" : "MISS",
       },
     });
   } catch (error) {

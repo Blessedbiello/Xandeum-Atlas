@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc";
 import type { NetworkStats } from "@/types";
+import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -9,11 +10,25 @@ export const revalidate = 0;
  * GET /api/stats
  *
  * Returns network-wide statistics for all pNodes.
+ * Uses Redis caching for improved performance.
  */
 export async function GET() {
   const startTime = Date.now();
 
   try {
+    // Try to get from cache first
+    const cachedStats = await getCache<NetworkStats>(CACHE_KEYS.NETWORK_STATS);
+    if (cachedStats) {
+      return NextResponse.json(cachedStats, {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+          "X-Response-Time": `${Date.now() - startTime}ms`,
+          "X-Cache": "HIT",
+        },
+      });
+    }
+
+    // Cache miss - collect fresh data
     const snapshot = await collectNetworkSnapshot({
       timeout: 10000,
       concurrency: 15,
@@ -67,11 +82,15 @@ export async function GET() {
       fetched_at: snapshot.collected_at,
     };
 
+    // Cache the stats for future requests
+    await setCache(CACHE_KEYS.NETWORK_STATS, stats, CACHE_TTL.STATS);
+
     return NextResponse.json(stats, {
       headers: {
         "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
         "X-Response-Time": `${Date.now() - startTime}ms`,
         "X-Collection-Duration": `${snapshot.duration_ms}ms`,
+        "X-Cache": "MISS",
       },
     });
   } catch (error) {

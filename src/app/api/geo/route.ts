@@ -15,8 +15,9 @@ import {
   calculateCountryDistribution,
   type GeoLocation,
 } from "@/lib/geo/geolocation";
+import { getCache, setCache, getIpGeo, setIpGeo, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 
-// Cache for geo results
+// Interface for API response
 interface GeoApiResponse {
   nodes: Array<{
     pubkey: string;
@@ -30,17 +31,19 @@ interface GeoApiResponse {
   fetched_at: string;
 }
 
-let geoCache: GeoApiResponse | null = null;
-let lastFetched = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
 export async function GET() {
-  try {
-    const now = Date.now();
+  const startTime = Date.now();
 
-    // Return cached data if fresh
-    if (geoCache && now - lastFetched < CACHE_DURATION) {
-      return NextResponse.json(geoCache);
+  try {
+    // Check Redis cache first
+    const cachedGeoData = await getCache<GeoApiResponse>(CACHE_KEYS.GEO_DATA);
+    if (cachedGeoData) {
+      return NextResponse.json(cachedGeoData, {
+        headers: {
+          "X-Response-Time": `${Date.now() - startTime}ms`,
+          "X-Cache": "HIT",
+        },
+      });
     }
 
     // Collect nodes from pRPC
@@ -60,26 +63,43 @@ export async function GET() {
       }
     }
 
-    // Fetch geolocation for each unique IP (with rate limiting)
+    // Fetch geolocation for each unique IP (with per-IP caching)
     const geoResults: GeoLocation[] = [];
     const ipArray = Array.from(uniqueIps);
+    const uncachedIps: string[] = [];
 
-    // Process in batches to respect rate limits (45 req/min for IP-API)
-    const batchSize = 40;
-    for (let i = 0; i < ipArray.length; i += batchSize) {
-      const batch = ipArray.slice(i, i + batchSize);
+    // Check cache for each IP first
+    for (const ip of ipArray) {
+      const cachedGeo = await getIpGeo(ip);
+      if (cachedGeo) {
+        geoResults.push(cachedGeo);
+      } else {
+        uncachedIps.push(ip);
+      }
+    }
 
-      const batchPromises = batch.map(async (ip) => {
-        const geo = await getGeoLocation(ip);
-        return geo;
-      });
+    // Only fetch geolocation for uncached IPs (with rate limiting)
+    if (uncachedIps.length > 0) {
+      const batchSize = 40;
+      for (let i = 0; i < uncachedIps.length; i += batchSize) {
+        const batch = uncachedIps.slice(i, i + batchSize);
 
-      const batchResults = await Promise.all(batchPromises);
-      geoResults.push(...batchResults.filter((g): g is GeoLocation => g !== null));
+        const batchPromises = batch.map(async (ip) => {
+          const geo = await getGeoLocation(ip);
+          if (geo) {
+            // Cache this IP's geolocation for 30 days
+            await setIpGeo(ip, geo);
+          }
+          return geo;
+        });
 
-      // Wait 60 seconds between batches if more batches remain
-      if (i + batchSize < ipArray.length) {
-        await new Promise((r) => setTimeout(r, 60000));
+        const batchResults = await Promise.all(batchPromises);
+        geoResults.push(...batchResults.filter((g): g is GeoLocation => g !== null));
+
+        // Wait 60 seconds between batches if more batches remain
+        if (i + batchSize < uncachedIps.length) {
+          await new Promise((r) => setTimeout(r, 60000));
+        }
       }
     }
 
@@ -109,7 +129,7 @@ export async function GET() {
       };
     });
 
-    // Cache the results
+    // Build and cache the response
     const responseData: GeoApiResponse = {
       nodes: nodesWithGeo,
       total: nodesWithGeo.length,
@@ -119,10 +139,17 @@ export async function GET() {
       fetched_at: new Date().toISOString(),
     };
 
-    geoCache = responseData;
-    lastFetched = now;
+    // Cache the full geo data response
+    await setCache(CACHE_KEYS.GEO_DATA, responseData, CACHE_TTL.GEO_DATA);
 
-    return NextResponse.json(responseData);
+    return NextResponse.json(responseData, {
+      headers: {
+        "X-Response-Time": `${Date.now() - startTime}ms`,
+        "X-Cache": "MISS",
+        "X-Cached-IPs": String(ipArray.length - uncachedIps.length),
+        "X-New-IPs": String(uncachedIps.length),
+      },
+    });
   } catch (error) {
     console.error("Geo API error:", error);
     return NextResponse.json(
