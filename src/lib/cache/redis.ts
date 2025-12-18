@@ -162,5 +162,3 @@ export async function checkRedisHealth(): Promise<boolean> {
     return false;
   }
 }
-
-export const redis = getRedisClient();
