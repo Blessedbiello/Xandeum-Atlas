@@ -6,18 +6,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import { calculateLeaderboard, type NodeScore } from "@/lib/scoring/node-score";
+import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
+import type { CollectionResult } from "@/types";
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
-
-// Cache for leaderboard data
-let leaderboardCache: {
-  scores: NodeScore[];
-  fetched_at: string;
-  badge_distribution: Record<string, number>;
-} | null = null;
-let lastFetched = 0;
-const CACHE_DURATION = 60 * 1000; // 1 minute
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,12 +18,25 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "50", 10);
     const badge = searchParams.get("badge"); // Filter by badge type
 
-    const now = Date.now();
+    // Check cache first
+    const cacheKey = 'network:leaderboard';
+    let leaderboardCache = await getCache<{
+      scores: NodeScore[];
+      fetched_at: string;
+      badge_distribution: Record<string, number>;
+    }>(cacheKey);
 
-    // Refresh cache if needed
-    if (!leaderboardCache || now - lastFetched > CACHE_DURATION) {
-      const collectionResult = await collectNetworkSnapshot();
-      const scores = calculateLeaderboard(collectionResult.nodes);
+    if (!leaderboardCache) {
+      // Try to get primary snapshot (shared across all endpoints)
+      let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY);
+
+      if (!snapshot) {
+        // Only collect if primary snapshot is also missing
+        snapshot = await collectNetworkSnapshot();
+        await setCache(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY, snapshot, CACHE_TTL.SNAPSHOT_PRIMARY);
+      }
+
+      const scores = calculateLeaderboard(snapshot.nodes);
 
       // Calculate badge distribution
       const badge_distribution: Record<string, number> = {
@@ -47,10 +53,12 @@ export async function GET(request: NextRequest) {
 
       leaderboardCache = {
         scores,
-        fetched_at: new Date().toISOString(),
+        fetched_at: snapshot.collected_at,
         badge_distribution,
       };
-      lastFetched = now;
+
+      // Cache the leaderboard
+      await setCache(cacheKey, leaderboardCache, CACHE_TTL.STATS);
     }
 
     let filteredScores = leaderboardCache.scores;

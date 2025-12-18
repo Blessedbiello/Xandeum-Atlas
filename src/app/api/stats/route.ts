@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc";
-import type { NetworkStats } from "@/types";
+import type { NetworkStats, CollectionResult, NodeWithStats } from "@/types";
 import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 
 export const dynamic = "force-dynamic";
@@ -16,26 +16,36 @@ export async function GET() {
   const startTime = Date.now();
 
   try {
-    // Try to get from cache first
+    // Check stats cache first (fastest)
     const cachedStats = await getCache<NetworkStats>(CACHE_KEYS.NETWORK_STATS);
     if (cachedStats) {
       return NextResponse.json(cachedStats, {
         headers: {
-          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
           "X-Response-Time": `${Date.now() - startTime}ms`,
           "X-Cache": "HIT",
         },
       });
     }
 
-    // Cache miss - collect fresh data
-    const snapshot = await collectNetworkSnapshot({
-      timeout: 10000,
-      concurrency: 15,
-      fetchStats: true,
-    });
+    // Check if we have a primary snapshot (shared across all endpoints)
+    let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY);
+    let fromPrimary = true;
 
-    const nodes = snapshot.nodes;
+    if (!snapshot) {
+      // Only collect if primary snapshot is also missing
+      fromPrimary = false;
+      snapshot = await collectNetworkSnapshot({
+        timeout: 10000,
+        concurrency: 15,
+        fetchStats: true,
+      });
+
+      // Cache in primary location for other endpoints to use
+      await setCache(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY, snapshot, CACHE_TTL.SNAPSHOT_PRIMARY);
+    }
+
+    const nodes: NodeWithStats[] = snapshot.nodes;
 
     // Calculate status counts
     const online = nodes.filter((n) => n.status === "online").length;
@@ -87,10 +97,10 @@ export async function GET() {
 
     return NextResponse.json(stats, {
       headers: {
-        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
         "X-Response-Time": `${Date.now() - startTime}ms`,
         "X-Collection-Duration": `${snapshot.duration_ms}ms`,
-        "X-Cache": "MISS",
+        "X-Cache": fromPrimary ? "PRIMARY" : "MISS",
       },
     });
   } catch (error) {

@@ -28,6 +28,7 @@ function getRedisClient(): Redis | null {
 
 // Cache key prefixes
 export const CACHE_KEYS = {
+  NETWORK_SNAPSHOT_PRIMARY: 'network:snapshot:primary', // Source of truth - all endpoints check this first
   NETWORK_STATS: 'network:stats',
   NETWORK_SNAPSHOT: 'network:snapshot',
   NODES_LIST: 'network:nodes',
@@ -37,11 +38,12 @@ export const CACHE_KEYS = {
 
 // Cache TTL (Time To Live) in seconds
 export const CACHE_TTL = {
-  STATS: 30,        // 30 seconds - frequently accessed, needs to be fresh
-  SNAPSHOT: 60,     // 1 minute - underlying data for stats
-  NODES: 30,        // 30 seconds - node list
-  GEO_DATA: 300,    // 5 minutes - full geo response
-  GEO_IP: 86400 * 30, // 30 days - individual IP geolocation (rarely changes)
+  SNAPSHOT_PRIMARY: 300,  // 5 minutes - source of truth for all data
+  STATS: 300,             // 5 minutes - derived from primary snapshot
+  SNAPSHOT: 300,          // 5 minutes - same as primary
+  NODES: 300,             // 5 minutes
+  GEO_DATA: 600,          // 10 minutes - geo data changes slowly
+  GEO_IP: 86400 * 30,     // 30 days - individual IP geolocation (rarely changes)
 } as const;
 
 /**

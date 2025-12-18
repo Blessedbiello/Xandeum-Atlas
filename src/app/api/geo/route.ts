@@ -80,15 +80,15 @@ export async function GET() {
 
     // Only fetch geolocation for uncached IPs (with rate limiting)
     if (uncachedIps.length > 0) {
-      const batchSize = 40;
+      const batchSize = 45; // IP-API allows 45 req/min on free tier
       for (let i = 0; i < uncachedIps.length; i += batchSize) {
         const batch = uncachedIps.slice(i, i + batchSize);
 
         const batchPromises = batch.map(async (ip) => {
           const geo = await getGeoLocation(ip);
           if (geo) {
-            // Cache this IP's geolocation for 30 days
-            await setIpGeo(ip, geo);
+            // Cache this IP's geolocation for 30 days (fire and forget)
+            setIpGeo(ip, geo).catch(() => {}); // Don't await to avoid blocking
           }
           return geo;
         });
@@ -96,9 +96,9 @@ export async function GET() {
         const batchResults = await Promise.all(batchPromises);
         geoResults.push(...batchResults.filter((g): g is GeoLocation => g !== null));
 
-        // Wait 2 seconds between batches to respect rate limits (45 req/min)
+        // Wait 1.5 seconds between batches (45 req in 60s = ~1.3s per batch safe)
         if (i + batchSize < uncachedIps.length) {
-          await new Promise((r) => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 1500));
         }
       }
     }

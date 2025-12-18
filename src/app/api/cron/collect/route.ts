@@ -91,11 +91,11 @@ export async function GET(request: NextRequest) {
       fetched_at: snapshot.collected_at,
     };
 
-    // Cache the stats
-    await setCache(CACHE_KEYS.NETWORK_STATS, stats, CACHE_TTL.STATS);
+    // Cache in primary location (all endpoints will use this)
+    await setCache(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY, snapshot, CACHE_TTL.SNAPSHOT_PRIMARY);
 
-    // Cache the full snapshot for /api/nodes
-    await setCache(CACHE_KEYS.NETWORK_SNAPSHOT, snapshot, CACHE_TTL.SNAPSHOT);
+    // Also cache the derived stats
+    await setCache(CACHE_KEYS.NETWORK_STATS, stats, CACHE_TTL.STATS);
 
     const duration = Date.now() - startTime;
 

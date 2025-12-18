@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10)));
     const search = searchParams.get("search")?.toLowerCase();
 
-    // Try to get snapshot from cache first
-    let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT);
+    // Try to get primary snapshot first (shared across all endpoints)
+    let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY);
     let cacheHit = true;
 
     if (!snapshot) {
@@ -47,8 +47,8 @@ export async function GET(request: NextRequest) {
         fetchStats: true,
       });
 
-      // Cache the snapshot for future requests
-      await setCache(CACHE_KEYS.NETWORK_SNAPSHOT, snapshot, CACHE_TTL.SNAPSHOT);
+      // Cache in primary location for other endpoints to use
+      await setCache(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY, snapshot, CACHE_TTL.SNAPSHOT_PRIMARY);
     }
 
     let nodes: NodeWithStats[] = snapshot.nodes;
