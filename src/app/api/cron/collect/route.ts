@@ -40,11 +40,12 @@ export async function GET(request: NextRequest) {
 
     console.log("[Cron] Starting background data collection...");
 
-    // Collect fresh network snapshot
+    // Collect fresh network snapshot with credits
     const snapshot = await collectNetworkSnapshot({
       timeout: 10000,
       concurrency: 20, // Slightly higher concurrency for background job
       fetchStats: true,
+      fetchCredits: true, // Enable pod credits collection
     });
 
     const nodes = snapshot.nodes;
@@ -98,10 +99,12 @@ export async function GET(request: NextRequest) {
     await setCache(CACHE_KEYS.NETWORK_STATS, stats, CACHE_TTL.STATS);
 
     const duration = Date.now() - startTime;
+    const nodesWithCredits = nodes.filter((n) => n.credits !== undefined).length;
 
     console.log(`[Cron] Collection completed in ${duration}ms`);
     console.log(`[Cron] Cached stats for ${nodes.length} nodes`);
     console.log(`[Cron] Health: ${online} online, ${degraded} degraded, ${offline} offline`);
+    console.log(`[Cron] Credits: ${nodesWithCredits}/${nodes.length} nodes have credits data`);
 
     return NextResponse.json({
       success: true,

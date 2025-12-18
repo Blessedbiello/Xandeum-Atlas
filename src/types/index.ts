@@ -8,6 +8,7 @@ export interface Pod {
   // Extended fields (may be present in some responses)
   uptime?: number;
   storage_used?: number;
+  credits?: number; // Pod credits allocation
 }
 
 export interface NodeStats {
@@ -107,4 +108,15 @@ export interface CacheMetadata {
 export interface CachedResponse<T> {
   data: T;
   metadata: CacheMetadata;
+}
+
+// Pod Credits API types
+export interface PodCredits {
+  pod_id: string;  // Maps to Pod.pubkey
+  credits: number;
+}
+
+export interface PodsCreditsResponse {
+  pods_credits: PodCredits[];
+  status: string;
 }

@@ -8,6 +8,7 @@ import type {
   NodeStatus,
   CollectionResult,
   CollectionError,
+  PodsCreditsResponse,
 } from "@/types";
 
 /**
@@ -20,6 +21,10 @@ export interface CollectorConfig {
   concurrency?: number;
   /** Whether to fetch stats for each node (default: true) */
   fetchStats?: boolean;
+  /** Whether to fetch pod credits (default: false) */
+  fetchCredits?: boolean;
+  /** Credits API URL (default: https://podcredits.xandeum.network/api/pods-credits) */
+  creditsUrl?: string;
   /** Custom seed IPs to use */
   seeds?: string[];
   /** Enable debug logging */
@@ -30,9 +35,57 @@ const DEFAULT_CONFIG: Required<CollectorConfig> = {
   timeout: 8000,
   concurrency: 10,
   fetchStats: true,
+  fetchCredits: false,
+  creditsUrl: "https://podcredits.xandeum.network/api/pods-credits",
   seeds: [...SEED_IPS],
   debug: false,
 };
+
+/**
+ * Fetch pod credits from the credits API
+ */
+export async function fetchPodsCredits(
+  url: string,
+  timeout: number = 10000,
+  debug: boolean = false
+): Promise<Map<string, number>> {
+  const creditsMap = new Map<string, number>();
+
+  try {
+    if (debug) {
+      console.log(`[Collector] Fetching pod credits from ${url}`);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data: PodsCreditsResponse = await response.json();
+
+    if (data.pods_credits && Array.isArray(data.pods_credits)) {
+      for (const { pod_id, credits } of data.pods_credits) {
+        creditsMap.set(pod_id, credits);
+      }
+
+      if (debug) {
+        console.log(`[Collector] Loaded ${creditsMap.size} pod credits`);
+      }
+    }
+  } catch (error) {
+    if (debug) {
+      console.error(`[Collector] Failed to fetch pod credits:`, error);
+    }
+    // Return empty map on error - credits are optional
+  }
+
+  return creditsMap;
+}
 
 /**
  * Determine node status based on last seen timestamp
@@ -221,6 +274,38 @@ export async function collectNetworkSnapshot(
         stats: null,
         status: determineNodeStatus(pod.last_seen_timestamp),
       });
+    }
+  }
+
+  // Phase 3: Fetch pod credits (if enabled)
+  if (cfg.fetchCredits) {
+    try {
+      const creditsMap = await fetchPodsCredits(
+        cfg.creditsUrl,
+        cfg.timeout,
+        cfg.debug
+      );
+
+      // Merge credits into nodes
+      let creditsMatchedCount = 0;
+      for (const node of nodesWithStats) {
+        const credits = creditsMap.get(node.pubkey);
+        if (credits !== undefined) {
+          node.credits = credits;
+          creditsMatchedCount++;
+        }
+      }
+
+      if (cfg.debug) {
+        console.log(
+          `[Collector] Matched ${creditsMatchedCount}/${nodesWithStats.length} nodes with credits data`
+        );
+      }
+    } catch (error) {
+      if (cfg.debug) {
+        console.error(`[Collector] Credits integration failed:`, error);
+      }
+      // Continue without credits - they're optional
     }
   }
 

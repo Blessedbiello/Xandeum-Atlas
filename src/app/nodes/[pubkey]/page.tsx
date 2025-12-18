@@ -265,6 +265,12 @@ export default function NodeDetailPage() {
                 subtitle="Current connections"
                 icon={<Activity className="h-5 w-5" />}
               />
+              <StatCard
+                title="Pod Credits"
+                value={node.credits !== undefined ? node.credits.toLocaleString() : "N/A"}
+                subtitle="Available credits allocation"
+                icon={<Activity className="h-5 w-5" />}
+              />
             </div>
 
             {/* Additional Info */}

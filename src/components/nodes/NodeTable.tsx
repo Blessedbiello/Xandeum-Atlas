@@ -120,6 +120,9 @@ function LoadingSkeleton() {
             <Skeleton className="h-4 w-16" />
           </TableCell>
           <TableCell>
+            <Skeleton className="h-4 w-16" />
+          </TableCell>
+          <TableCell>
             <Skeleton className="h-4 w-32" />
           </TableCell>
           <TableCell>
@@ -152,6 +155,7 @@ export function NodeTable({ nodes, loading }: NodeTableProps) {
           <TableHead>Pubkey</TableHead>
           <TableHead>Address</TableHead>
           <TableHead>Version</TableHead>
+          <TableHead className="w-[100px]">Credits</TableHead>
           <TableHead className="w-[140px]">CPU</TableHead>
           <TableHead className="w-[140px]">RAM</TableHead>
           <TableHead>Uptime</TableHead>
@@ -163,7 +167,7 @@ export function NodeTable({ nodes, loading }: NodeTableProps) {
           <LoadingSkeleton />
         ) : nodes.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={8} className="text-center py-8">
+            <TableCell colSpan={9} className="text-center py-8">
               <p className="text-muted-foreground">No nodes found</p>
             </TableCell>
           </TableRow>
@@ -193,6 +197,11 @@ export function NodeTable({ nodes, loading }: NodeTableProps) {
               <TableCell>
                 <span className="text-sm">
                   {node.version || "Unknown"}
+                </span>
+              </TableCell>
+              <TableCell>
+                <span className="text-sm font-mono">
+                  {node.credits !== undefined ? node.credits.toLocaleString() : "-"}
                 </span>
               </TableCell>
               <TableCell>

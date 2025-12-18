@@ -34,6 +34,7 @@ export const CACHE_KEYS = {
   NODES_LIST: 'network:nodes',
   GEO_DATA: 'network:geo',
   GEO_IP: 'geo:ip:',  // Prefix for individual IP lookups
+  POD_CREDITS: 'network:pod-credits', // Pod credits data
 } as const;
 
 // Cache TTL (Time To Live) in seconds
@@ -44,6 +45,7 @@ export const CACHE_TTL = {
   NODES: 300,             // 5 minutes
   GEO_DATA: 600,          // 10 minutes - geo data changes slowly
   GEO_IP: 86400 * 30,     // 30 days - individual IP geolocation (rarely changes)
+  CREDITS: 3600,          // 1 hour - credits change slowly
 } as const;
 
 /**
