@@ -96,9 +96,9 @@ export async function GET() {
         const batchResults = await Promise.all(batchPromises);
         geoResults.push(...batchResults.filter((g): g is GeoLocation => g !== null));
 
-        // Wait 60 seconds between batches if more batches remain
+        // Wait 2 seconds between batches to respect rate limits (45 req/min)
         if (i + batchSize < uncachedIps.length) {
-          await new Promise((r) => setTimeout(r, 60000));
+          await new Promise((r) => setTimeout(r, 2000));
         }
       }
     }
