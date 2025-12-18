@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc";
-import type { NodesApiResponse, NodeWithStats } from "@/types";
+import type { NodesApiResponse, NodeWithStats, CollectionResult } from "@/types";
 import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search")?.toLowerCase();
 
     // Try to get snapshot from cache first
-    let snapshot = await getCache<any>(CACHE_KEYS.NETWORK_SNAPSHOT);
+    let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT);
     let cacheHit = true;
 
     if (!snapshot) {
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       await setCache(CACHE_KEYS.NETWORK_SNAPSHOT, snapshot, CACHE_TTL.SNAPSHOT);
     }
 
-    let nodes = snapshot.nodes;
+    let nodes: NodeWithStats[] = snapshot.nodes;
 
     // Filter by status
     if (status && ["online", "degraded", "offline", "unknown"].includes(status)) {
