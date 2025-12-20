@@ -7,6 +7,25 @@
 import { z } from 'zod';
 
 /**
+ * Helper to make URL fields optional and handle empty/invalid values gracefully
+ */
+const optionalUrl = () =>
+  z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val || val.trim() === '') return undefined;
+      // Check if it contains placeholder text
+      if (val.includes('[') && val.includes(']')) return undefined;
+      try {
+        new URL(val);
+        return val;
+      } catch {
+        return undefined;
+      }
+    });
+
+/**
  * Environment variables schema
  */
 const envSchema = z.object({
@@ -15,8 +34,11 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
 
   // Postgres (required for production historical data)
-  POSTGRES_URL: z.string().url().optional(),
-  POSTGRES_URL_NON_POOLING: z.string().url().optional(),
+  // Support multiple provider naming conventions
+  POSTGRES_URL: optionalUrl(),
+  POSTGRES_URL_NON_POOLING: optionalUrl(),
+  DATABASE_URL: optionalUrl(), // Neon, Supabase
+  DATABASE_URL_UNPOOLED: optionalUrl(), // Neon non-pooled
 
   // Cron job secret (required for production)
   CRON_SECRET: z.string().min(32).optional(),
@@ -38,12 +60,6 @@ const prodEnvSchema = envSchema.extend({
   }),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1, {
     message: 'UPSTASH_REDIS_REST_TOKEN is required in production',
-  }),
-  POSTGRES_URL: z.string().url({
-    message: 'POSTGRES_URL is required in production',
-  }),
-  POSTGRES_URL_NON_POOLING: z.string().url({
-    message: 'POSTGRES_URL_NON_POOLING is required in production',
   }),
   CRON_SECRET: z.string().min(32, {
     message: 'CRON_SECRET must be at least 32 characters',
@@ -68,8 +84,14 @@ export function validateEnv(): Env {
       if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
         console.warn('[ENV] Warning: Redis not configured - caching will be disabled');
       }
-      if (!env.POSTGRES_URL || !env.POSTGRES_URL_NON_POOLING) {
+      const hasPostgres = !!(
+        (env.POSTGRES_URL && env.POSTGRES_URL_NON_POOLING) ||
+        (env.DATABASE_URL && env.DATABASE_URL_UNPOOLED) ||
+        env.DATABASE_URL
+      );
+      if (!hasPostgres) {
         console.warn('[ENV] Warning: Postgres not configured - historical data disabled');
+        console.warn('[ENV] Set DATABASE_URL (Neon/Supabase) or POSTGRES_URL (Vercel)');
       }
       if (!env.CRON_SECRET) {
         console.warn('[ENV] Warning: CRON_SECRET not set - cron endpoints unprotected');
@@ -112,10 +134,47 @@ export function isRedisConfigured(): boolean {
 
 /**
  * Check if Postgres is configured
+ * Supports multiple provider naming conventions:
+ * - Vercel Postgres: POSTGRES_URL + POSTGRES_URL_NON_POOLING
+ * - Neon: DATABASE_URL + DATABASE_URL_UNPOOLED
+ * - Supabase/Others: DATABASE_URL
  */
 export function isPostgresConfigured(): boolean {
   const env = getEnv();
-  return !!(env.POSTGRES_URL && env.POSTGRES_URL_NON_POOLING);
+
+  // Check for Vercel Postgres style
+  if (env.POSTGRES_URL && env.POSTGRES_URL_NON_POOLING) {
+    return true;
+  }
+
+  // Check for Neon style with unpooled connection
+  if (env.DATABASE_URL && env.DATABASE_URL_UNPOOLED) {
+    return true;
+  }
+
+  // Check for single DATABASE_URL (Supabase, Neon pooled, etc.)
+  if (env.DATABASE_URL) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Get Postgres connection URL (pooled)
+ */
+export function getPostgresUrl(): string | undefined {
+  const env = getEnv();
+  return env.POSTGRES_URL || env.DATABASE_URL;
+}
+
+/**
+ * Get Postgres connection URL (non-pooled/direct)
+ * Falls back to pooled URL if non-pooled not available
+ */
+export function getPostgresUrlNonPooling(): string | undefined {
+  const env = getEnv();
+  return env.POSTGRES_URL_NON_POOLING || env.DATABASE_URL_UNPOOLED || env.DATABASE_URL;
 }
 
 /**

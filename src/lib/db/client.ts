@@ -1,11 +1,41 @@
 /**
  * Database Client
  * Manages Postgres connection pool and provides type-safe queries
+ * Supports multiple providers: Vercel Postgres, Neon, Supabase, etc.
  */
 
 import { sql } from '@vercel/postgres';
-import { isPostgresConfigured } from '@/lib/env';
+import { isPostgresConfigured, getPostgresUrl, getPostgresUrlNonPooling } from '@/lib/env';
 import type { NodeWithStats } from '@/types';
+
+/**
+ * Initialize Postgres environment variables for @vercel/postgres SDK
+ * The SDK expects POSTGRES_URL, but providers like Neon use DATABASE_URL
+ */
+function initializePostgresEnv(): void {
+  // Only run once
+  if (process.env.__POSTGRES_INITIALIZED) return;
+
+  const pooledUrl = getPostgresUrl();
+  const nonPooledUrl = getPostgresUrlNonPooling();
+
+  // Set POSTGRES_URL if not already set (for @vercel/postgres SDK compatibility)
+  if (!process.env.POSTGRES_URL && pooledUrl) {
+    process.env.POSTGRES_URL = pooledUrl;
+  }
+
+  // Set POSTGRES_URL_NON_POOLING if not already set
+  if (!process.env.POSTGRES_URL_NON_POOLING && nonPooledUrl) {
+    process.env.POSTGRES_URL_NON_POOLING = nonPooledUrl;
+  }
+
+  process.env.__POSTGRES_INITIALIZED = 'true';
+}
+
+// Initialize on module load
+if (isPostgresConfigured()) {
+  initializePostgresEnv();
+}
 
 /**
  * Check if database is available
