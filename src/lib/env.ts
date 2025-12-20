@@ -14,6 +14,10 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
 
+  // Postgres (required for production historical data)
+  POSTGRES_URL: z.string().url().optional(),
+  POSTGRES_URL_NON_POOLING: z.string().url().optional(),
+
   // Cron job secret (required for production)
   CRON_SECRET: z.string().min(32).optional(),
 
@@ -34,6 +38,12 @@ const prodEnvSchema = envSchema.extend({
   }),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1, {
     message: 'UPSTASH_REDIS_REST_TOKEN is required in production',
+  }),
+  POSTGRES_URL: z.string().url({
+    message: 'POSTGRES_URL is required in production',
+  }),
+  POSTGRES_URL_NON_POOLING: z.string().url({
+    message: 'POSTGRES_URL_NON_POOLING is required in production',
   }),
   CRON_SECRET: z.string().min(32, {
     message: 'CRON_SECRET must be at least 32 characters',
@@ -57,6 +67,9 @@ export function validateEnv(): Env {
     if (!isProduction) {
       if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
         console.warn('[ENV] Warning: Redis not configured - caching will be disabled');
+      }
+      if (!env.POSTGRES_URL || !env.POSTGRES_URL_NON_POOLING) {
+        console.warn('[ENV] Warning: Postgres not configured - historical data disabled');
       }
       if (!env.CRON_SECRET) {
         console.warn('[ENV] Warning: CRON_SECRET not set - cron endpoints unprotected');
@@ -98,6 +111,14 @@ export function isRedisConfigured(): boolean {
 }
 
 /**
+ * Check if Postgres is configured
+ */
+export function isPostgresConfigured(): boolean {
+  const env = getEnv();
+  return !!(env.POSTGRES_URL && env.POSTGRES_URL_NON_POOLING);
+}
+
+/**
  * Check if cron secret is configured
  */
 export function isCronSecretConfigured(): boolean {
@@ -113,16 +134,14 @@ export function isProduction(): boolean {
   return env.NODE_ENV === 'production';
 }
 
-// Validate on module load in production
-if (process.env.NODE_ENV === 'production') {
+// Validate on module load in production (but not during build)
+if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PHASE) {
   try {
     validateEnv();
     console.log('[ENV] Environment validation passed');
   } catch (error) {
     console.error('[ENV] CRITICAL: Environment validation failed');
-    // In production, we want to fail fast
-    if (process.env.NODE_ENV === 'production') {
-      process.exit(1);
-    }
+    // In production runtime, we want to fail fast
+    process.exit(1);
   }
 }

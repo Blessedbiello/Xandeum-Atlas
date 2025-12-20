@@ -15,6 +15,7 @@ import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import { setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 import type { NetworkStats } from "@/types";
 import { withCronRateLimit } from "@/lib/ratelimit";
+import { insertNodeSnapshots, isDatabaseAvailable } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes max execution time
@@ -102,6 +103,18 @@ export async function GET(request: NextRequest) {
     // Also cache the derived stats
     await setCache(CACHE_KEYS.NETWORK_STATS, stats, CACHE_TTL.STATS);
 
+    // Persist to database for historical analytics (non-blocking)
+    let dbInserted = 0;
+    if (isDatabaseAvailable()) {
+      try {
+        dbInserted = await insertNodeSnapshots(nodes);
+        console.log(`[Cron] Persisted ${dbInserted} node snapshots to database`);
+      } catch (dbError) {
+        console.error('[Cron] Database insertion failed (non-fatal):', dbError);
+        // Continue - database is optional, Redis cache is primary
+      }
+    }
+
     const duration = Date.now() - startTime;
     const nodesWithCredits = nodes.filter((n) => n.credits !== undefined).length;
 
@@ -124,6 +137,10 @@ export async function GET(request: NextRequest) {
       cached: {
         stats: true,
         snapshot: true,
+      },
+      database: {
+        inserted: dbInserted,
+        available: isDatabaseAvailable(),
       },
       collected_at: snapshot.collected_at,
     });

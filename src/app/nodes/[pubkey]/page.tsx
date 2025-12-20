@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import { Header } from "@/components/dashboard/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNode } from "@/lib/hooks/use-nodes";
+import { useNodeHistory } from "@/lib/hooks/use-analytics";
+import { NodeHistoryChart } from "@/components/charts/NodeHistoryChart";
 import {
   formatBytes,
   formatUptime,
@@ -28,6 +31,7 @@ import {
   Network,
   CheckCircle,
   XCircle,
+  TrendingUp,
 } from "lucide-react";
 
 function StatCard({
@@ -88,8 +92,10 @@ export default function NodeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const pubkey = params.pubkey as string;
+  const [historyHours, setHistoryHours] = useState(24);
 
   const { data, isLoading, error } = useNode(pubkey);
+  const { data: historyData, isLoading: historyLoading } = useNodeHistory(pubkey, historyHours);
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -359,6 +365,102 @@ export default function NodeDetailPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Historical Performance Trends */}
+            {historyData && historyData.history && historyData.history.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4" />
+                      Performance History
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={historyHours === 24 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setHistoryHours(24)}
+                      >
+                        24h
+                      </Button>
+                      <Button
+                        variant={historyHours === 168 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setHistoryHours(168)}
+                      >
+                        7d
+                      </Button>
+                      <Button
+                        variant={historyHours === 720 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setHistoryHours(720)}
+                      >
+                        30d
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Uptime Stats Summary */}
+                  {historyData.uptime_stats && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg bg-muted/50">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Uptime</p>
+                        <p className="text-lg font-bold text-green-500">
+                          {historyData.uptime_stats.uptime_percent.toFixed(1)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Avg CPU</p>
+                        <p className="text-lg font-bold">
+                          {historyData.uptime_stats.avg_cpu
+                            ? `${historyData.uptime_stats.avg_cpu.toFixed(1)}%`
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Avg RAM</p>
+                        <p className="text-lg font-bold">
+                          {historyData.uptime_stats.avg_ram
+                            ? `${historyData.uptime_stats.avg_ram.toFixed(1)}%`
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Data Points</p>
+                        <p className="text-lg font-bold">{historyData.data_points}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Charts Grid */}
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div>
+                      <h4 className="text-sm font-medium mb-3">CPU Usage</h4>
+                      <NodeHistoryChart data={historyData.history} metric="cpu" height={250} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-medium mb-3">RAM Usage</h4>
+                      <NodeHistoryChart data={historyData.history} metric="ram" height={250} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Show message if historical data is not available */}
+            {!historyLoading && (!historyData || !historyData.history || historyData.history.length === 0) && (
+              <Card className="border-dashed">
+                <CardContent className="pt-6 text-center py-8">
+                  <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">Historical Data Coming Soon</h3>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                    Historical performance data will be available once the database collects enough snapshots.
+                    Data collection happens automatically every hour.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </>
         ) : null}
       </main>
