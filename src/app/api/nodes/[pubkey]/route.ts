@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot, PrpcClient } from "@/lib/prpc";
 import type { NodeDetailApiResponse } from "@/types";
+import { withRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -8,11 +9,13 @@ export const dynamic = "force-dynamic";
  * GET /api/nodes/[pubkey]
  *
  * Fetches detailed information about a specific pNode.
+ * Rate limited to 100 requests per minute per IP.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { pubkey: string } }
 ) {
+  return withRateLimit(request, async () => {
   const startTime = Date.now();
   const { pubkey } = params;
 
@@ -79,4 +82,5 @@ export async function GET(
       { status: 500 }
     );
   }
+  });
 }

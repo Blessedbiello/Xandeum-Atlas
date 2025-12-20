@@ -1,6 +1,7 @@
 /**
  * Leaderboard API Route
  * Returns node scores and rankings
+ * Rate limited to 100 requests per minute per IP.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -8,15 +9,19 @@ import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import { calculateLeaderboard, type NodeScore } from "@/lib/scoring/node-score";
 import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 import type { CollectionResult } from "@/types";
+import { withRateLimit } from "@/lib/ratelimit";
+import { validateQuery, LeaderboardQuerySchema, ValidationError } from "@/lib/validation/api-schemas";
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  return withRateLimit(request, async () => {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
-    const badge = searchParams.get("badge"); // Filter by badge type
+
+    // Validate and parse query parameters
+    const { limit, badge } = validateQuery(LeaderboardQuerySchema, searchParams);
 
     // Check cache first
     const cacheKey = 'network:leaderboard';
@@ -80,9 +85,16 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Leaderboard API error:", error);
+
+    // Handle validation errors
+    if (error instanceof ValidationError) {
+      return NextResponse.json(error.toJSON(), { status: 400 });
+    }
+
     return NextResponse.json(
       { error: "Failed to fetch leaderboard data" },
       { status: 500 }
     );
   }
+  });
 }

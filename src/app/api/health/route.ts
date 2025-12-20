@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { checkSeedHealth, SEED_IPS } from "@/lib/prpc";
+import { withRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -7,8 +8,10 @@ export const dynamic = "force-dynamic";
  * GET /api/health
  *
  * Health check endpoint for the API and seed node connectivity.
+ * Rate limited to 100 requests per minute per IP.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  return withRateLimit(request, async () => {
   const startTime = Date.now();
 
   try {
@@ -59,4 +62,5 @@ export async function GET() {
       { status: 500 }
     );
   }
+  });
 }

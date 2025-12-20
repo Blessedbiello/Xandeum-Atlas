@@ -1,9 +1,11 @@
 /**
  * Geolocation API Route
  * Provides geolocation data for pNode IP addresses
+ * Rate limited to 100 requests per minute per IP.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { withRateLimit } from "@/lib/ratelimit";
 
 // Force dynamic rendering - this route makes external API calls
 export const dynamic = 'force-dynamic';
@@ -16,6 +18,7 @@ import {
   type GeoLocation,
 } from "@/lib/geo/geolocation";
 import { getCache, setCache, getIpGeo, setIpGeo, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
+import type { CollectionResult } from "@/types";
 
 // Interface for API response
 interface GeoApiResponse {
@@ -31,7 +34,8 @@ interface GeoApiResponse {
   fetched_at: string;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  return withRateLimit(request, async () => {
   const startTime = Date.now();
 
   try {
@@ -46,9 +50,25 @@ export async function GET() {
       });
     }
 
-    // Collect nodes from pRPC
-    const collectionResult = await collectNetworkSnapshot();
-    const nodes = collectionResult.nodes;
+    // Use primary snapshot (shared across all endpoints) to avoid duplicate collection
+    let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY);
+    let fromPrimary = true;
+
+    if (!snapshot) {
+      // Only collect if primary snapshot is also missing
+      fromPrimary = false;
+      snapshot = await collectNetworkSnapshot({
+        timeout: 10000,
+        concurrency: 15,
+        fetchStats: true,
+        fetchCredits: true,
+      });
+
+      // Cache in primary location for other endpoints to use
+      await setCache(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY, snapshot, CACHE_TTL.SNAPSHOT_PRIMARY);
+    }
+
+    const nodes = snapshot.nodes;
 
     // Extract unique IPs from node addresses
     const uniqueIps = new Set<string>();
@@ -145,7 +165,7 @@ export async function GET() {
     return NextResponse.json(responseData, {
       headers: {
         "X-Response-Time": `${Date.now() - startTime}ms`,
-        "X-Cache": "MISS",
+        "X-Cache": fromPrimary ? "PRIMARY" : "MISS",
         "X-Cached-IPs": String(ipArray.length - uncachedIps.length),
         "X-New-IPs": String(uncachedIps.length),
       },
@@ -157,4 +177,5 @@ export async function GET() {
       { status: 500 }
     );
   }
+  });
 }

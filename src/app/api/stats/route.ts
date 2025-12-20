@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc";
 import type { NetworkStats, CollectionResult, NodeWithStats } from "@/types";
 import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
+import { withRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,8 +12,10 @@ export const revalidate = 0;
  *
  * Returns network-wide statistics for all pNodes.
  * Uses Redis caching for improved performance.
+ * Rate limited to 100 requests per minute per IP.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  return withRateLimit(request, async () => {
   const startTime = Date.now();
 
   try {
@@ -113,4 +116,5 @@ export async function GET() {
       { status: 500 }
     );
   }
+  });
 }

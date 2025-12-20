@@ -1,16 +1,19 @@
 /**
  * Export API Route
  * Provides node data export in CSV and JSON formats
+ * Rate limited to 100 requests per minute per IP.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import { calculateLeaderboard } from "@/lib/scoring/node-score";
+import { withRateLimit } from "@/lib/ratelimit";
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  return withRateLimit(request, async () => {
   try {
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format") || "json";
@@ -101,6 +104,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+  });
 }
 
 /**

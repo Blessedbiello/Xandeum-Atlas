@@ -4,22 +4,26 @@
  */
 
 import { Redis } from '@upstash/redis';
+import { getEnv, isRedisConfigured } from '@/lib/env';
 
 // Initialize Redis client (lazy initialization for serverless)
 let redisClient: Redis | null = null;
 
 function getRedisClient(): Redis | null {
-  // Check if Redis is configured
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-    console.warn('Redis not configured - caching disabled');
+  // Check if Redis is configured using validated env
+  if (!isRedisConfigured()) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[Redis] Not configured - caching disabled');
+    }
     return null;
   }
 
   // Return existing client or create new one
   if (!redisClient) {
+    const env = getEnv();
     redisClient = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      url: env.UPSTASH_REDIS_REST_URL!,
+      token: env.UPSTASH_REDIS_REST_TOKEN!,
     });
   }
 

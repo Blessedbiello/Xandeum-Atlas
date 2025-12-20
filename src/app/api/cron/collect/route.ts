@@ -7,12 +7,14 @@
  * 3. Ensure users always get instant responses from cache
  *
  * Security: Protected by CRON_SECRET environment variable
+ * Rate limited to 10 requests per hour per IP
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc/collector";
 import { setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
 import type { NetworkStats } from "@/types";
+import { withCronRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes max execution time
@@ -21,8 +23,10 @@ export const maxDuration = 300; // 5 minutes max execution time
  * GET /api/cron/collect
  *
  * Protected endpoint for background data collection
+ * Rate limited to 10 requests per hour
  */
 export async function GET(request: NextRequest) {
+  return withCronRateLimit(request, async () => {
   const startTime = Date.now();
 
   try {
@@ -135,4 +139,5 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+  });
 }

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { collectNetworkSnapshot } from "@/lib/prpc";
 import type { NodesApiResponse, NodeWithStats, CollectionResult } from "@/types";
 import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache/redis";
+import { withRateLimit } from "@/lib/ratelimit";
+import { validateQuery, NodesQuerySchema, ValidationError } from "@/lib/validation/api-schemas";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,6 +13,7 @@ export const revalidate = 0;
  *
  * Fetches all pNodes from the gossip network with their stats.
  * Uses Redis caching for improved performance.
+ * Rate limited to 100 requests per minute per IP.
  *
  * Query Parameters:
  * - status: Filter by status (online, degraded, offline)
@@ -21,18 +24,17 @@ export const revalidate = 0;
  * - search: Search by pubkey or IP
  */
 export async function GET(request: NextRequest) {
+  return withRateLimit(request, async () => {
   const startTime = Date.now();
 
   try {
     const { searchParams } = new URL(request.url);
 
-    // Parse query parameters
-    const status = searchParams.get("status");
-    const sort = searchParams.get("sort") || "last_seen";
-    const order = searchParams.get("order") || "desc";
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10)));
-    const search = searchParams.get("search")?.toLowerCase();
+    // Validate and parse query parameters
+    const { status, sort, order, page, limit, search } = validateQuery(
+      NodesQuerySchema,
+      searchParams
+    );
 
     // Try to get primary snapshot first (shared across all endpoints)
     let snapshot = await getCache<CollectionResult>(CACHE_KEYS.NETWORK_SNAPSHOT_PRIMARY);
@@ -53,17 +55,18 @@ export async function GET(request: NextRequest) {
 
     let nodes: NodeWithStats[] = snapshot.nodes;
 
-    // Filter by status
-    if (status && ["online", "degraded", "offline", "unknown"].includes(status)) {
+    // Filter by status (already validated)
+    if (status) {
       nodes = nodes.filter((n) => n.status === status);
     }
 
-    // Filter by search term
+    // Filter by search term (case-insensitive)
     if (search) {
+      const searchLower = search.toLowerCase();
       nodes = nodes.filter(
         (n) =>
-          n.pubkey.toLowerCase().includes(search) ||
-          n.address.toLowerCase().includes(search)
+          n.pubkey.toLowerCase().includes(searchLower) ||
+          n.address.toLowerCase().includes(searchLower)
       );
     }
 
@@ -98,6 +101,12 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("[API /nodes] Error:", error);
+
+    // Handle validation errors separately
+    if (error instanceof ValidationError) {
+      return NextResponse.json(error.toJSON(), { status: 400 });
+    }
+
     return NextResponse.json(
       {
         error: "Failed to fetch nodes",
@@ -106,6 +115,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+  });
 }
 
 function sortNodes(
