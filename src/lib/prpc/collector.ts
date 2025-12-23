@@ -251,7 +251,9 @@ export async function collectNetworkSnapshot(
           uptime_formatted: formatUptime(stats.uptime),
         });
       } else {
-        // Node without stats
+        // Node without stats - keep original status based on last_seen
+        // Stats can be unavailable for many reasons (firewall, endpoint disabled, etc.)
+        // but the node is still active if recently seen
         if (error && !isTimeoutError(error) && !isNetworkError(error)) {
           errors.push({
             type: "stats_unreachable",
@@ -262,7 +264,7 @@ export async function collectNetworkSnapshot(
         nodesWithStats.push({
           ...pod,
           stats: null,
-          status: status === "online" ? "degraded" : status,
+          status, // Keep status based on last_seen timestamp
         });
       }
     }
