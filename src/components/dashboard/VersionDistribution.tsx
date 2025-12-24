@@ -1,12 +1,37 @@
 "use client";
 
-import { useNetworkStats } from "@/lib/hooks/use-nodes";
+import { memo, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import type { NetworkStats } from "@/types";
 
-export function VersionDistribution() {
-  const { data: stats, isLoading } = useNetworkStats();
+interface VersionDistributionProps {
+  stats?: NetworkStats | null;
+  isLoading?: boolean;
+}
+
+/**
+ * VersionDistribution - Displays version distribution bars
+ * OPTIMIZED: Accepts stats as props, memoized for performance
+ */
+export const VersionDistribution = memo(function VersionDistribution({
+  stats,
+  isLoading = false,
+}: VersionDistributionProps) {
+  // Memoize sorted versions to prevent recalculation
+  const { versions, maxCount } = useMemo(() => {
+    if (!stats?.version_distribution) {
+      return { versions: [], maxCount: 0 };
+    }
+    const sorted = Object.entries(stats.version_distribution)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5); // Top 5 versions
+    return {
+      versions: sorted,
+      maxCount: Math.max(...sorted.map(([, count]) => count)),
+    };
+  }, [stats?.version_distribution]);
 
   if (isLoading) {
     return (
@@ -27,13 +52,6 @@ export function VersionDistribution() {
   }
 
   if (!stats || !stats.version_distribution) return null;
-
-  // Sort versions by count (descending)
-  const versions = Object.entries(stats.version_distribution)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5); // Top 5 versions
-
-  const maxCount = Math.max(...versions.map(([, count]) => count));
 
   return (
     <Card>
@@ -72,4 +90,4 @@ export function VersionDistribution() {
       </CardContent>
     </Card>
   );
-}
+});

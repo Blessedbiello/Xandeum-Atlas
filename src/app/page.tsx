@@ -7,12 +7,22 @@ import { VersionDistribution } from "@/components/dashboard/VersionDistribution"
 import { NodeTable } from "@/components/nodes/NodeTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useNodes } from "@/lib/hooks/use-nodes";
+import { useNodes, useNetworkStats } from "@/lib/hooks/use-nodes";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
+/**
+ * Dashboard Page
+ * OPTIMIZED: Single stats fetch shared across all components
+ * - Eliminates 3 duplicate API calls
+ * - All stat components receive data via props
+ */
 export default function DashboardPage() {
-  const { data: nodesData, isLoading } = useNodes({ limit: 10 });
+  // Single stats fetch - shared across StatsCards, StatusDistribution, VersionDistribution
+  const { data: stats, isLoading: statsLoading, error: statsError } = useNetworkStats();
+
+  // Separate nodes fetch for the table
+  const { data: nodesData, isLoading: nodesLoading } = useNodes({ limit: 10 });
 
   return (
     <div className="min-h-screen bg-background">
@@ -26,13 +36,17 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Stats Cards */}
-        <StatsCards />
+        {/* Stats Cards - receives shared stats data */}
+        <StatsCards
+          stats={stats}
+          isLoading={statsLoading}
+          error={statsError}
+        />
 
-        {/* Charts Row */}
+        {/* Charts Row - both receive shared stats data */}
         <div className="grid gap-6 md:grid-cols-2">
-          <StatusDistribution />
-          <VersionDistribution />
+          <StatusDistribution stats={stats} isLoading={statsLoading} />
+          <VersionDistribution stats={stats} isLoading={statsLoading} />
         </div>
 
         {/* Recent Nodes */}
@@ -49,7 +63,7 @@ export default function DashboardPage() {
           <CardContent>
             <NodeTable
               nodes={nodesData?.nodes ?? []}
-              loading={isLoading}
+              loading={nodesLoading}
             />
           </CardContent>
         </Card>

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Table,
@@ -24,7 +25,7 @@ import {
   formatPercent,
   cn,
 } from "@/lib/utils";
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy } from "lucide-react";
 import type { NodeWithStats, NodeStatus } from "@/types";
 
 interface NodeTableProps {
@@ -32,7 +33,10 @@ interface NodeTableProps {
   loading?: boolean;
 }
 
-function StatusBadge({ status }: { status: NodeStatus }) {
+/**
+ * StatusBadge - Memoized status indicator
+ */
+const StatusBadge = memo(function StatusBadge({ status }: { status: NodeStatus }) {
   const variants: Record<NodeStatus, "online" | "degraded" | "offline" | "unknown"> = {
     online: "online",
     degraded: "degraded",
@@ -54,21 +58,23 @@ function StatusBadge({ status }: { status: NodeStatus }) {
       {status.charAt(0).toUpperCase() + status.slice(1)}
     </Badge>
   );
-}
+});
 
-function MetricProgress({
+/**
+ * MetricProgress - Memoized progress bar for CPU/RAM
+ */
+const MetricProgress = memo(function MetricProgress({
   value,
   label,
 }: {
   value: number;
   label?: string;
 }) {
-  const color =
-    value < 50
-      ? "bg-green-500"
-      : value < 80
-      ? "bg-yellow-500"
-      : "bg-red-500";
+  const color = useMemo(() => {
+    if (value < 50) return "bg-green-500";
+    if (value < 80) return "bg-yellow-500";
+    return "bg-red-500";
+  }, [value]);
 
   return (
     <div className="space-y-1">
@@ -79,13 +85,16 @@ function MetricProgress({
       <Progress value={value} className="h-1.5" indicatorClassName={color} />
     </div>
   );
-}
+});
 
-function CopyButton({ text }: { text: string }) {
-  const handleCopy = async (e: React.MouseEvent) => {
+/**
+ * CopyButton - Memoized copy to clipboard button
+ */
+const CopyButton = memo(function CopyButton({ text }: { text: string }) {
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     await navigator.clipboard.writeText(text);
-  };
+  }, [text]);
 
   return (
     <Tooltip>
@@ -100,9 +109,12 @@ function CopyButton({ text }: { text: string }) {
       <TooltipContent>Copy pubkey</TooltipContent>
     </Tooltip>
   );
-}
+});
 
-function LoadingSkeleton() {
+/**
+ * LoadingSkeleton - Memoized loading state
+ */
+const LoadingSkeleton = memo(function LoadingSkeleton() {
   return (
     <>
       {[...Array(10)].map((_, i) => (
@@ -138,14 +150,95 @@ function LoadingSkeleton() {
       ))}
     </>
   );
-}
+});
 
-export function NodeTable({ nodes, loading }: NodeTableProps) {
+/**
+ * NodeTableRow - Memoized individual row component
+ * Prevents re-render when other rows update
+ */
+const NodeTableRow = memo(function NodeTableRow({
+  node,
+  onRowClick,
+}: {
+  node: NodeWithStats;
+  onRowClick: (pubkey: string) => void;
+}) {
+  const handleClick = useCallback(() => {
+    onRowClick(node.pubkey);
+  }, [node.pubkey, onRowClick]);
+
+  return (
+    <TableRow className="node-row" onClick={handleClick}>
+      <TableCell>
+        <StatusBadge status={node.status} />
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <code className="text-sm font-mono">
+            {truncatePubkey(node.pubkey)}
+          </code>
+          <CopyButton text={node.pubkey} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <code className="text-sm text-muted-foreground">
+          {node.address}
+        </code>
+      </TableCell>
+      <TableCell>
+        <span className="text-sm">
+          {node.version || "Unknown"}
+        </span>
+      </TableCell>
+      <TableCell>
+        <span className="text-sm font-mono">
+          {node.credits !== undefined ? node.credits.toLocaleString() : "-"}
+        </span>
+      </TableCell>
+      <TableCell>
+        {node.stats ? (
+          <MetricProgress value={node.stats.cpu_percent} />
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {node.ram_percent !== undefined ? (
+          <MetricProgress value={node.ram_percent} />
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {node.stats ? (
+          <span className="text-sm">
+            {formatUptime(node.stats.uptime)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <span className="text-sm text-muted-foreground">
+          {formatRelativeTime(node.last_seen_timestamp)}
+        </span>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+/**
+ * NodeTable - OPTIMIZED with React.memo and memoized sub-components
+ * - All child components are memoized to prevent unnecessary re-renders
+ * - Row components are extracted and memoized individually
+ * - Callbacks are memoized with useCallback
+ */
+export const NodeTable = memo(function NodeTable({ nodes, loading }: NodeTableProps) {
   const router = useRouter();
 
-  const handleRowClick = (pubkey: string) => {
+  const handleRowClick = useCallback((pubkey: string) => {
     router.push(`/nodes/${pubkey}`);
-  };
+  }, [router]);
 
   return (
     <Table>
@@ -173,69 +266,14 @@ export function NodeTable({ nodes, loading }: NodeTableProps) {
           </TableRow>
         ) : (
           nodes.map((node) => (
-            <TableRow
+            <NodeTableRow
               key={node.pubkey}
-              className="node-row"
-              onClick={() => handleRowClick(node.pubkey)}
-            >
-              <TableCell>
-                <StatusBadge status={node.status} />
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <code className="text-sm font-mono">
-                    {truncatePubkey(node.pubkey)}
-                  </code>
-                  <CopyButton text={node.pubkey} />
-                </div>
-              </TableCell>
-              <TableCell>
-                <code className="text-sm text-muted-foreground">
-                  {node.address}
-                </code>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm">
-                  {node.version || "Unknown"}
-                </span>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm font-mono">
-                  {node.credits !== undefined ? node.credits.toLocaleString() : "-"}
-                </span>
-              </TableCell>
-              <TableCell>
-                {node.stats ? (
-                  <MetricProgress value={node.stats.cpu_percent} />
-                ) : (
-                  <span className="text-muted-foreground">-</span>
-                )}
-              </TableCell>
-              <TableCell>
-                {node.ram_percent !== undefined ? (
-                  <MetricProgress value={node.ram_percent} />
-                ) : (
-                  <span className="text-muted-foreground">-</span>
-                )}
-              </TableCell>
-              <TableCell>
-                {node.stats ? (
-                  <span className="text-sm">
-                    {formatUptime(node.stats.uptime)}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">-</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <span className="text-sm text-muted-foreground">
-                  {formatRelativeTime(node.last_seen_timestamp)}
-                </span>
-              </TableCell>
-            </TableRow>
+              node={node}
+              onRowClick={handleRowClick}
+            />
           ))
         )}
       </TableBody>
     </Table>
   );
-}
+});

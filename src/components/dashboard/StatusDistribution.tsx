@@ -1,6 +1,6 @@
 "use client";
 
-import { useNetworkStats } from "@/lib/hooks/use-nodes";
+import { memo, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -11,6 +11,7 @@ import {
   Legend,
   Tooltip,
 } from "recharts";
+import type { NetworkStats } from "@/types";
 
 const COLORS = {
   online: "#10B981",
@@ -18,8 +19,28 @@ const COLORS = {
   offline: "#EF4444",
 };
 
-export function StatusDistribution() {
-  const { data: stats, isLoading } = useNetworkStats();
+interface StatusDistributionProps {
+  stats?: NetworkStats | null;
+  isLoading?: boolean;
+}
+
+/**
+ * StatusDistribution - Displays pie chart of node statuses
+ * OPTIMIZED: Accepts stats as props, memoized for performance
+ */
+export const StatusDistribution = memo(function StatusDistribution({
+  stats,
+  isLoading = false,
+}: StatusDistributionProps) {
+  // Memoize chart data to prevent recalculation
+  const data = useMemo(() => {
+    if (!stats) return [];
+    return [
+      { name: "Online", value: stats.online_nodes, color: COLORS.online },
+      { name: "Degraded", value: stats.degraded_nodes, color: COLORS.degraded },
+      { name: "Offline", value: stats.offline_nodes, color: COLORS.offline },
+    ].filter((d) => d.value > 0);
+  }, [stats]);
 
   if (isLoading) {
     return (
@@ -35,12 +56,6 @@ export function StatusDistribution() {
   }
 
   if (!stats) return null;
-
-  const data = [
-    { name: "Online", value: stats.online_nodes, color: COLORS.online },
-    { name: "Degraded", value: stats.degraded_nodes, color: COLORS.degraded },
-    { name: "Offline", value: stats.offline_nodes, color: COLORS.offline },
-  ].filter((d) => d.value > 0);
 
   return (
     <Card>
@@ -111,4 +126,4 @@ export function StatusDistribution() {
       </CardContent>
     </Card>
   );
-}
+});

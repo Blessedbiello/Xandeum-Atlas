@@ -1,6 +1,6 @@
 "use client";
 
-import { useNetworkStats } from "@/lib/hooks/use-nodes";
+import { memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes, formatPercent } from "@/lib/utils";
@@ -12,6 +12,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import type { NetworkStats } from "@/types";
 
 interface StatCardProps {
   title: string;
@@ -23,7 +24,7 @@ interface StatCardProps {
   loading?: boolean;
 }
 
-function StatCard({
+const StatCard = memo(function StatCard({
   title,
   value,
   subtitle,
@@ -83,11 +84,23 @@ function StatCard({
       </CardContent>
     </Card>
   );
+});
+
+interface StatsCardsProps {
+  stats?: NetworkStats | null;
+  isLoading?: boolean;
+  error?: Error | null;
 }
 
-export function StatsCards() {
-  const { data: stats, isLoading, error } = useNetworkStats();
-
+/**
+ * StatsCards - Displays network statistics cards
+ * OPTIMIZED: Accepts stats as props to avoid duplicate API calls
+ */
+export const StatsCards = memo(function StatsCards({
+  stats,
+  isLoading = false,
+  error = null,
+}: StatsCardsProps) {
   if (error) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -156,4 +169,4 @@ export function StatsCards() {
       />
     </div>
   );
-}
+});
